@@ -3,7 +3,7 @@ Import-Module -Name activedirectory
 # e.g. "OU=abc,DC=xyz,DC=com"
 $softwareOU = ""
 
-# button functions
+# button handlers
 $handler_queryCN = {
 	[void] $ListBox1.Items.Clear()
 	[void] $ListBox2.Items.Clear()
@@ -313,7 +313,7 @@ $ListBox4.HorizontalScrollbar = $true
 
 
 $elements = @(
-	$Button1,
+    $Button1,
     $Button2,
     $Button3,
     $Button3,
