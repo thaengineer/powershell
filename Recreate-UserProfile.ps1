@@ -9,39 +9,36 @@ param
 )
 
 
-# libraries
-Import-Module ActiveDirectory
-
-
-# variables
-$sid = (get-aduser -Identity "$UserId").sid.value
-$userProfile = "\\" + $ComputerName + "\HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + $sid
-$userDirectory = "\\" + $ComputerName + "\c$\Users\" + $UserId
+$SID = (get-aduser -Identity "$UserId").sid.value
+# $userSID = (Get-WmiObject -Class Win32_UserProfile -ComputerName $comp | Where-Object {$_.LocalPath -eq 'C:\Users\' + $userName}).sid + ".sid"
+$userProfile = "\\${ComputerName}\HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\${SID}"
+$userDirectory = "\\${ComputerName}\c$\Users\${UserId}"
 $count = 1
 
+Write-Host "[+] Exporting printer settings..."
+Start-Process -FilePath "C:\Windows\System32\spool\tools\PrintBrm.exe" -ArgumentList "-B -S \\${ComputerName} -F ${UserId}.printerexport" -NoNewWindow -Wait
 
 # check if computer is online
-if(test-connection -computername $ComputerName -count 1 -quiet)
-{
-	write-host -foregroundcolor green "[+] $ComputerName"
-
-	# check if SID exists in registry and delete it
-	if(test-path -path $userProfile)
-	{
+if (! (Test-Connection -computername $ComputerName -count 1 -quiet)) {
+	Write-Host -ForegroundColor Red "[!] ${ComputerName} is not reachable."
+} else {
+	if (! (Test-Path -Path $userProfile)) {
+		Write-Host "[!] User Account SID does not exist."
+	} else {
 		try
 		{
-			write-host -foregroundcolor green "[+] Removing - $userProfile"
-			reg delete $userProfile /f
-			write-host -foregroundcolor green "[+] Romoved."
+			Write-Host "[+] Backing up ${userProfile}"
+			reg export ${userProfile} \\${ComputerName}\c$\${UserId}.reg /y
+
+			write-host -foregroundcolor green "[+] Removing ${userProfile}"
+			reg delete ${userProfile} /f
+
+			write-host -foregroundcolor green "[+] Registry entry has been removed."
 		}
 		catch
 		{
-			write-host -foregroundcolor red "[!] Error removing - $userProfile"
+			write-host -foregroundcolor red "[!] Error removing $userProfile"
 		}
-	}
-	else
-	{
-		write-host -foregroundcolor red "[!] User account SID does not exist."
 	}
 
 	# check if user directory exists and rename it to $UserId.bak, or $UserId.bak1, ...
@@ -53,11 +50,11 @@ if(test-connection -computername $ComputerName -count 1 -quiet)
 		{
 			try
 			{
-				rename-item -path $userDirectory -newname "$UserId.bak" -force -erroraction silentlycontinue
+				rename-item -path $userDirectory -newname "${UserId}.bak" -force -erroraction silentlycontinue
 			}
 			catch
 			{
-				rename-item -path $userDirectory -newname "$UserId.bak$count" -force -erroraction silentlycontinue
+				rename-item -path $userDirectory -newname "${UserId}.bak${count}" -force -erroraction silentlycontinue
 			}
 
 			$count += 1
