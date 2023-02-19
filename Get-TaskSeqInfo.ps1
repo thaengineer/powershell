@@ -16,11 +16,11 @@ $ProviderMachineName = "<SCCM_FQDN>"
 
 $initParams = @{}
 
-if ((Get-Module ConfigurationManager) -eq $null) {
+if ($null -eq (Get-Module ConfigurationManager)) {
     Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
 }
 
-if ((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
+if ($null -eq (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) {
     New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
 }
 
@@ -28,14 +28,14 @@ Set-Location "$($SiteCode):\" @initParams
 
 
 $Ts = Get-CMTaskSequence -Name $TaskSequence -Fast
-$TsSteps = ($Ts | Get-CMTaskSequenceGroup | Select * | Where { $_.Name -eq "Install Operating System" }).Steps.Name
+$TsSteps = ($Ts | Get-CMTaskSequenceGroup | Select-Object-Object * | Where-Object { $_.Name -eq "Install Operating System" }).Steps.Name
 
 foreach ($Step in $TsSteps) {
-        foreach ($item in ($TS | Get-CMTaskSequenceStep | Select * | Where { $_.Name -eq $Step } | Select Properties)) {
+        foreach ($item in ($TS | Get-CMTaskSequenceStep | Select-Object * | Where-Object { $_.Name -eq $Step } | Select-Object Properties)) {
             $Object = New-Object PSObject -Property @{
                 StepName  = $item.Properties.Name
                 StepState = $item.Properties.Enabled
             }
-            $Object | Select StepName, StepState
+            $Object | Select-Object StepName, StepState
     }
 }
