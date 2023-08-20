@@ -1,3 +1,2 @@
-# Computer Support Automation
-
-This Repository contains various scripts I used as a Desktop Support Technician to make life just a bit easier.
+# PowerShell Scripts
+This repo contains various powershell scripts I created.
