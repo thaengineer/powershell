@@ -7,7 +7,7 @@ if (-not (Test-Path -Path $Path)) {
 }
 
 $DomainGroup = '<domain>\<group>'
-$Account = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList $DomainGroup
+$Account = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList "$($DomainGroup)"
 
 $Items = Get-ChildItem -Path "$($Path)"
 
