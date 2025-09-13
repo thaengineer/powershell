@@ -1,43 +1,47 @@
-Import-Module ActiveDirectory
+param (
+	[Parameter(Mandatory = $true, Position = 0)]
+	[string]$ComputerName,
 
-$profileList = "\HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\"
-$machines = get-content ".\machines.txt"
+	[Parameter(Mandatory = $false, Position = 0)]
+	[int]$Days = 30
+)
 
-foreach($i in $machines)
-{
-    if(test-connection -computername $i -count 1 -quiet)
-    {
-    	$loggedInUser = (gwmi -class win32_computersystem -computername $i | select username).username -split "GAC\\"
-    	$userIDs = (ls -Path \\$i\c$\Users).name -notlike "Default" -notlike "Public" -notlike $loggedInUser[1]
 
-    	foreach($id in $userIDs)
-    	{
-	        try
-	        {
-	        	$sid = (get-aduser -Identity "$id").sid.value
-	        	$key = "\\" + $i + $profileList + $sid
-	        	$profilePath = "\\" + $i + "\c$\Users\" + $id
-	        	write-host $key
-	        	try
-	        	{
-	        		write-host -foregroundcolor green "[+] Removing $sid from registry on $i..."
-	        		reg delete $key /f
-	        		write-host -foregroundcolor green "[+] Removing C:\Users\$id from $i..."
-	        		remove-item -path $profilePath -Recurse -Force #-verbose
-                    write-host ""
-	        	}
-	        	catch
-	        	{
-	        		write-host -foregroundcolor red "[!] Unable to remove $sid from $i"
-	        	}
-	        }
-	        catch
-	        {
-	        	$profilePath = "\\" + $i + "\c$\Users\" + $id
-                write-host -foregroundcolor red "[!] No SID found for user ID $id on $i"
-                write-host -foregroundcolor green "[+] Removing C:\Users\$id from $i..."
-                remove-item -path $profilePath -Recurse -Force #-verbose
-	        }
-	    }
+function Write-Log {
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Message,
+
+        [ValidateSet('Information', 'Warning', 'Error', IgnoreCase = $true)]
+        [Parameter(Mandatory = $false, Position = 1)]
+        [string]$Type = 'Information'
+    )
+
+    $TimeStamp = Get-Date -Format 'yyyy/MM/dd HH:mm:ss'
+
+    Switch ($Type) {
+        'Information' { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Green "[+] " -NoNewline; Write-Host $Message }
+        'Warning'     { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Yellow "[*] " -NoNewline; Write-Host $Message }
+        'Error'       { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Red "[!] " -NoNewline; Write-Host $Message }
     }
 }
+
+
+if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+    Write-Log -Message "Unable to connect to $($ComputerName)" -Type Error
+    break
+}
+
+try {
+    $Accounts    = Get-CimInstance -ClassName Win32_UserProfile -ComputerName $ComputerName -ErrorAction Stop
+    $OldAccounts = $Accounts | Where-Object { -not $_.Special -and $_LastUseTime -le (Get-Date).AddDays(-$Days) }
+} catch {
+    Write-Log -Message "Failed to query user profiles older than $($Days) days on $($ComputerName)." -Type Error
+}
+
+$OldAccounts | ForEach-Object {
+    Write-Log -Message "Removing user profile $($_.LocalPath.Split('\')[-1])." -Type Warning
+    Remove-CimInstance -ComputerName $ComputerName -InputObject $_
+}
+
+Write-Log -Message "Done." -Type Information
