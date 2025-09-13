@@ -37,6 +37,7 @@ try {
     $OldAccounts = $Accounts | Where-Object { -not $_.Special -and $_LastUseTime -le (Get-Date).AddDays(-$Days) }
 } catch {
     Write-Log -Message "Failed to query user profiles older than $($Days) days on $($ComputerName)." -Type Error
+	break
 }
 
 $OldAccounts | ForEach-Object {
