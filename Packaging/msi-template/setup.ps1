@@ -1,39 +1,40 @@
-Param (
-    [ValidateSet("Install", "Uninstall", IgnoreCase = $true)]
+param (
+    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
     [Parameter(Mandatory = $false, Position = 0)]
-    [string]$Action = "Install"
+    [string]$Action = 'Install'
 )
 
-$Msi = Get-ChildItem -Filter "*.msi" | Select-Object -First 1
-
-Function Install-Application {
-    Param (
-        [Parameter(Mandatory = $true, Position = 0)]
-        [object]$Msi
-    )
-
-    $Version = ($Msi.Name | Select-String -Pattern "\d{2}(\.\d){1,2}").Matches.Value
-    $LogFile = "C:\Temp\Install-ProductName-$($Version).log"
-    $MsiArgs = "/i `"$($Msi.Name)`" /qn /norestart /l*v $($LogFile)"
-
-    Start-Process -FilePath "msiexec.exe" -ArgumentList "$($ArgList)" -NoNewWindow -Wait -ErrorAction SilentlyContinue
+if (-not (Test-Path -Path 'C:\Temp')) {
+    New-Item -ItemType Directory -Path 'C:\Temp' -Force | Out-Null
 }
 
-Function Uninstall-Application {
+
+function Install-Application {
+    $Msi     = Get-ChildItem -Filter '*.msi'
+    $Version = ($Msi.Name | Select-String -Pattern "(\d+\.){1,2}\d+").Matches.Value
+    $LogFile = "C:\Temp\Install-ProductName-$($Version).log"
+    $MsiArgs = "/i `"$($Msi.Name)`" /qn /norestart /l*v `"$($LogFile)`""
+
+    Start-Process -FilePath "msiexec.exe" -ArgumentList "$($ArgList)" -NoNewWindow -Wait
+}
+
+
+function Uninstall-Application {
     $Products = [ordered]@{
-        "ProductName1-Version1" = "{00000000-0000-0000-0000-000000000000}"
-        "ProductName2-Version2" = "{00000000-0000-0000-0000-000000000000}"
+        "ProductName-Version" = "{00000000-0000-0000-0000-000000000000}"
     }
 
     $Products.GetEnumerator() | Foreach-Object {
-        $LogFile = "C:\Temp\Uninstall-$().log"
+        $Version = ($_.Key | Select-String -Pattern "(\d+\.){1,2}\d+").Matches.Value
+        $LogFile = "C:\Temp\Uninstall-ProductName-$($Version).log"
         $MsiArgs = "/x $($_.Value) /qn /norestart /l*v $($LogFile)"
 
-        Start-Process -FilePath "msiexec.exe" -ArgumentList $MsiArgs -NoNewWindow -Wait -ErrorAction SilentlyContinue
+        Start-Process -FilePath 'msiexec.exe' -ArgumentList $MsiArgs -NoNewWindow -Wait -ErrorAction SilentlyContinue
     }
 }
 
+
 Switch ($Action) {
-    'Install'   { Install-Application -Msi $Msi }
+    'Install'   { Install-Application }
     'Uninstall' { Uninstall-Application }
 }
