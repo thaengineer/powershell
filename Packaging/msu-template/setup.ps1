@@ -1,25 +1,20 @@
-Param (
-    [ValidateSet("Install", "Uninstall", IgnoreCase = $true)]
+param (
+    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
     [Parameter(Mandatory = $false, Position = 0)]
-    [string]$Action = "Install"
+    [string]$Action = 'Install'
 )
 
-$Msu = Get-ChildItem -Filter "*.msu" | Select-Object -First 1
 
-Function Test-Update {
-    Param (
-        [object]$Msu
-    )
-
-    $HotFixID = ($Msu.Name | Select-String -Pattern 'kb([0-9]){6,7}').Matches.Value.ToUpper()
+function Test-Update {
+    $Msu      = Get-ChildItem -Filter "*.msu"
+    $HotFixID = ($Msu.Name | Select-String -Pattern 'kb\d+').Matches.Value.ToUpper()
 
     return $HotFixID -in (Get-HotFix).HotFixID
 }
 
-Function Install-Update {
-    Param (
-        [object]$Msu
-    )
+
+function Install-Update {
+    $Msu = Get-ChildItem -Filter "*.msu"
 
     @("SSU*.cab", "Windows*.cab") | Foreach-Object {
         Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
@@ -27,14 +22,13 @@ Function Install-Update {
 
     Get-ChildItem -Filter "*.cab" | Foreach-Object {
         Add-WindowsPackage -Online -PackagePath "$($_.FullName)" -NoRestart -ErrorAction SilentlyContinue
-        Remove-Item -Path "$($_.FullName)" -Force -ErrorAction SilentlyContinue
+        Remove-Item -Path "$($_.FullName)" -Force
     }
 }
 
-Function Uninstall-Update {
-    Param (
-        [object]$Msu
-    )
+
+function Uninstall-Update {
+    $Msu = Get-ChildItem -Filter "*.msu"
 
     @("Windows*.cab") | Foreach-Object {
         Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
@@ -47,7 +41,7 @@ Function Uninstall-Update {
 }
 
 
-Switch ($Action) {
-    'Install'   { If (-not (Test-Update -Msu $Msu)) { Install-Update -Msu $Msu } }
-    'Uninstall' { If (Test-Update -Msu $Msu) { Uninstall-Update -Msu $Msu } }
+switch ($Action) {
+    'Install'   { if (-not (Test-Update -Msu $Msu)) { Install-Update } }
+    'Uninstall' { if (Test-Update -Msu $Msu) { Uninstall-Update } }
 }
