@@ -12,14 +12,18 @@
     bin\setup.msi
 #>
 
+param (
+    [parameter(Mandatory = $true, Position = 0)]
+    [string]$WxsFile,
 
-param
-(
-    [parameter(mandatory=$True)]
-    [string]$WxsFile
+    [parameter(Mandatory = $false, Position = 1)]
+    [string]$WixDir = 'C:\Program Files (x86)\WiX Toolset v3.11\bin'
 )
 
-$wixDir = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
+if (-not (Test-Path -Path $WixDir)) {
+    Write-Host -ForegroundColor Yellow "[!] $($WixDir) does not exist, please specify -WixDir <PATH_TO_WIX_BIN>"
+    break
+}
 
-& ${wixDir}\candle.exe ${WxsFile} -o obj\
-& ${wixDir}\light.exe obj\${WxsFile}.wixobj -o bin\setup.msi
+Start-Process -FilePath "$($WixDir)\candle.exe" -ArgumentList "$($WxsFile) -o obj\" -NoNewWindow -Wait
+Start-Process -FilePath "$($WixDir)\light.exe" -ArgumentList "obj\$($WxsFile).wixobj -o bin\setup.msi" -NoNewWindow -Wait
