@@ -33,7 +33,7 @@ if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
 }
 
 try {
-    $Account     = Get-CimInstance -ClassName Win32_UserProfile -Filter "LocalPath like '%$($UserName)'" -ComputerName $env:COMPUTERNAME -ErrorAction Stop
+    $Account     = Get-CimInstance -ClassName Win32_UserProfile -Filter "LocalPath like '%$($UserName)'" -ComputerName $ComputerName -ErrorAction Stop
     $AccountSid  = $Account.SID
     $DriveLetter = $Account.LocalPath.Split('\')[0].Replace(':','').ToLower()
     $AccountPath = $Account.LocalPath -replace "^.*Users", "\\$($ComputerName)\$($DriveLetter)$\Users"
