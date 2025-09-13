@@ -1,70 +1,66 @@
-# command line parameters
-param
-(
-	[parameter(mandatory=$True)]
+param (
+	[Parameter(Mandatory = $true, Position = 0)]
 	[string]$ComputerName,
 	
-	[parameter(mandatory=$True)]
-	[string]$UserId
+	[Parameter(mandatory=$true, Position = 1)]
+	[string]$UserName
 )
 
 
-$SID = (get-aduser -Identity "$UserId").sid.value
-# $userSID = (Get-WmiObject -Class Win32_UserProfile -ComputerName $comp | Where-Object {$_.LocalPath -eq 'C:\Users\' + $userName}).sid + ".sid"
-$userProfile = "\\${ComputerName}\HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\${SID}"
-$userDirectory = "\\${ComputerName}\c$\Users\${UserId}"
-$count = 1
+function Write-Log {
+    param (
+        [Parameter(Mandatory = $true, Position = 0)]
+        [string]$Message,
 
-Write-Host "[+] Exporting printer settings..."
-Start-Process -FilePath "C:\Windows\System32\spool\tools\PrintBrm.exe" -ArgumentList "-B -S \\${ComputerName} -F ${UserId}.printerexport" -NoNewWindow -Wait
+        [ValidateSet('Information', 'Warning', 'Error', IgnoreCase = $true)]
+        [Parameter(Mandatory = $false, Position = 1)]
+        [string]$Type = 'Information'
+    )
 
-# check if computer is online
-if (! (Test-Connection -computername $ComputerName -count 1 -quiet)) {
-	Write-Host -ForegroundColor Red "[!] ${ComputerName} is not reachable."
-} else {
-	if (! (Test-Path -Path $userProfile)) {
-		Write-Host "[!] User Account SID does not exist."
-	} else {
-		try
-		{
-			Write-Host "[+] Backing up ${userProfile}"
-			reg export ${userProfile} \\${ComputerName}\c$\${UserId}.reg /y
+    $TimeStamp = Get-Date -Format 'yyyy/MM/dd HH:mm:ss'
 
-			write-host -foregroundcolor green "[+] Removing ${userProfile}"
-			reg delete ${userProfile} /f
-
-			write-host -foregroundcolor green "[+] Registry entry has been removed."
-		}
-		catch
-		{
-			write-host -foregroundcolor red "[!] Error removing $userProfile"
-		}
-	}
-
-	# check if user directory exists and rename it to $UserId.bak, or $UserId.bak1, ...
-	if(test-path -path $userDirectory)
-	{
-		write-host -foregroundcolor green "[+] Renaming - $userDirectory"
-		
-		while(test-path -path $userDirectory)
-		{
-			try
-			{
-				rename-item -path $userDirectory -newname "${UserId}.bak" -force -erroraction silentlycontinue
-			}
-			catch
-			{
-				rename-item -path $userDirectory -newname "${UserId}.bak${count}" -force -erroraction silentlycontinue
-			}
-
-			$count += 1
-		}
-
-		write-host -foregroundcolor green "[+] Renamed."
-	}	
-	else
-	{
-		write-host -foregroundcolor red "[!] User profile folder does not exist."
-	}
+    Switch ($Type) {
+        'Information' { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Green "[+] " -NoNewline; Write-Host $Message }
+        'Warning'     { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Yellow "[*] " -NoNewline; Write-Host $Message }
+        'Error'       { Write-Host "$($TimeStamp) " -NoNewline; Write-Host -ForegroundColor Red "[!] " -NoNewline; Write-Host $Message }
+    }
 }
 
+
+if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+    Write-Log -Message "Unable to connect to $($ComputerName)" -Type Error
+    break
+}
+
+try {
+    $Account     = Get-CimInstance -ClassName Win32_UserProfile -Filter "LocalPath like '%$($UserName)'" -ComputerName $env:COMPUTERNAME -ErrorAction Stop
+    $AccountSid  = $Account.SID
+    $DriveLetter = $Account.LocalPath.Split('\')[0].Replace(':','').ToLower()
+    $AccountPath = $Account.LocalPath -replace "^.*Users", "\\$($ComputerName)\$($DriveLetter)$\Users"
+    $AccountKey  = "\\$($ComputerName)\HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($AccountSid)"
+} catch {
+    Write-Log -Message "Failed to query user profile $($UserName) on $($ComputerName)" -Type Error
+}
+
+Write-Log -Message "Exporting printer settings..." -Type Warning
+Start-Process -FilePath "C:\Windows\System32\spool\tools\PrintBrm.exe" -ArgumentList "-B -S \\$(ComputerName) -F $($UserName).printerexport" -NoNewWindow -Wait
+
+if (-not (Test-Path -Path $AccountKey)) {
+    Write-Log -Message "$($AccountKey) does not exist" -Type Error
+} else {
+    Write-Log -Message "Backing up user profile registry hive..." -Type Warning
+    Start-Process -FilePath 'reg.exe' -ArgumentList "export $($AccountKey) \\$($ComputerName)\$($DriveLetter)$\$(UserName).reg /y" -NoNewWindow -Wait
+    Write-Log -Message "Done." -Type Information
+
+    Write-Log -Message "Removing user profile registry hive..." -Type Warning
+    Remove-Item -Path $AccountKey -Recurse -Force
+    Write-Log -Message "Done." -Type Information
+}
+
+if (-not (Test-Path -Path $AccountPath)) {
+    Write-Log -Message "$($AccountPath) does not exist" -Type Error
+} else {
+    Write-Log -Message "Renaming user profile directory..." -Type Warning
+    Rename-Item -Path $AccountPath -NewName "$($UserName).$(Get-Date -Format 'yyyy-MM-dd_HH-mm-ss')" -Force
+    Write-Log -Message "Done." -Type Information
+}
