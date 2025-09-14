@@ -1,3 +1,8 @@
+# tls 1.2
+# if ([bool]([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+#     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+# }
+
 # env
 $EnvMachine = ([System.Environment]::GetEnvironmentVariable('Path', 'Machine').Split(';') | Sort-Object -Unique | Where-Object { $_ -ne '' }) -join ';'
 $EnvUser    = ([System.Environment]::GetEnvironmentVariable('Path', 'User').Split(';') | Sort-Object -Unique | Where-Object { $_ -ne '' }) -join ';'
@@ -49,6 +54,17 @@ function Get-Sha256Sum {
     }
 
     return "$($File.Name)`n$($Sha256Sum)"
+}
+
+
+function Get-TimeStamp {
+    Param (
+        $Message
+    )
+
+    $TimeStamp = Get-Date -Format "ddd MMM dd HH:mm"
+
+    Write-Host "$TimeStamp $Message"
 }
 
 
@@ -185,100 +201,116 @@ function Transfer-File {
     }
 }
 
+
 function Enable-WinRM {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "winrm qc -quiet" -ComputerName $ComputerName -Namespace root\cimv2 -ErrorAction Stop | Out-Null
-            Write-Host -ForegroundColor Cyan "$($ComputerName) : enabled WinRM"
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : failed to enable WinRM"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-WmiMethod -Class Win32_Process -Name Create -ArgumentList "winrm qc -quiet" -ComputerName $ComputerName -Namespace root\cimv2 -ErrorAction Stop | Out-Null
+        Write-Host -ForegroundColor Yellow "$($ComputerName) enabled WinRM"
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) failed to enable WinRM"
     }
 }
+
 
 function Get-LoggedOn {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            $UserID = ((Get-CimInstance -ClassName Win32_ComputerSystem -ComputerName $ComputerName).UserName -split '\\')[-1]
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
 
-            if ("" -eq $UserID) {
-                Write-Host "nobody"
-            } else {
-                Get-ADUser -Identity $UserID | Select-Object -Property Name, GivenName, Surname
-            }
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
+    try {
+        $CimInst  = Get-CimInstance -ClassName Win32_ComputerSystem -ComputerName $ComputerName -ErrorAction Stop
+        $UserName = $CimInst.UserName.Split('\')[-1]
+
+        if ($UserName -eq '' -or $UserName -eq $null) {
+            Write-Host -ForegroundColor Yellow "nobody"
+        } else {
+            Write-Host -ForegroundColor Yellow "$($UserName)"
         }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
+
 
 function Get-OsPatches {
     Param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Get-HotFix -ComputerName $ComputerName | Sort-Object -Property HotFixID
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        $HotFixes = Get-HotFix -ComputerName $ComputerName -ErrorAction Stop
+        $HotFixes | Sort-Object -Property HotFixID
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
     }
 }
+
 
 function Get-PendingReboot {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    $Payload = {
-        if (Test-Path -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired") {
-            Write-Host -ForegroundColor Cyan "[Reboot Pending] Windows Update"
+    $ScriptBlock = {
+        $Table = [ordered]@{
+            '[Reboot Pending] Windows Update'                 = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
+            '[Reboot Pending] Component Based Servicing'      = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
+            '[Reboot Pending] File Rename Operations'         = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager:PendingFileRenameOperations'
         }
 
-        if (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) {
-            Write-Host -ForegroundColor Cyan "[Reboot Pending] Component Based Servicing"
-        }
+        $Table.GetEnumerator() | ForEach-Object {
+            $Message = $_.Key
 
-        if (Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Services\Pending") {
-            Write-Host -ForegroundColor Cyan "[Reboot Pending] Windows Server Update Services"
-        }
+            if ($_.Value -match ':Pending') {
+                $Key   = $_.Value.Split(':')[0,1] -join ':'
+                $Value = $_.Value.Split(':')[-1]
 
-        if (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\" -Name "PendingFileRenameOperations" -ErrorAction SilentlyContinue) {
-            Write-Host -ForegroundColor Cyan "[Reboot Pending] File Rename Operations"
+                if (Get-ItemProperty -Path $Key -Name $Value -ErrorAction SilentlyContinue) {
+                    Write-Host -ForegroundColor Yellow $_.Key
+                }
+            } else {
+                if (Test-Path -Path $_.Value) {
+                    Write-Host -ForegroundColor Yellow $_.Key
+                }
+            }
         }
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock $Payload
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ErrorAction Stop
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
 
+
 function Get-OsVersion {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
     $ScriptBlock = {
@@ -309,52 +341,27 @@ function Get-OsVersion {
             default      { $OsName = "Windows NT $($WinNT)" }
         }
 
-        $Properties = [Ordered]@{
-            'ComputerName'        = "$($env:COMPUTERNAME)"
-            'Name'                = "$($OsName)"
-            'Version'             = "$($Version).$($UBR)"
-        }
+        $Table                 = [ordered]@{}
+        $Table['ComputerName'] = "$($env:COMPUTERNAME)"
+        $Table['Name']         = "$($OsName)"
+        $Table['Version']      = "$($Version).$($UBR)"
+        $Properties            = [PSCustomObject]$Table
 
-        $Properties.GetEnumerator() | ForEach-Object {
-            $Object | Add-Member -MemberType NoteProperty -Name $_.Key -Value $Properties[$_.Key]
-        }
-
-        $Object | Format-Table
+        return $Properties
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
 
-function Get-TimeStamp {
-    Param (
-        $Message
-    )
-
-    $TimeStamp = Get-Date -Format "ddd dd MMM yyyy HH:mm"
-
-    Write-Host "$TimeStamp $Message"
-}
-
-function Get-TlsErrors {
-    param (
-        [int]$Minutes = 5,
-        [string]$ComputerName = $env:COMPUTERNAME
-    )
-
-    Get-EventLog -ComputerName $ComputerName -LogName System |
-        Where-Object { $_.EventId -eq '36871' -and $_.TimeGenerated -gt (Get-Date).AddMinutes(-$Minutes) } |
-            Select-Object -Property TimeGenerated, EntryType, Source, EventID, Message |
-                Format-Table -Wrap
-}
 
 function Get-InstalledSoftware {
     param (
@@ -447,56 +454,4 @@ function PsCtrl {
         Start-Sleep -Seconds 60
         $s.Invoke("^")
     }
-}
-
-
-
-
-
-param (
-    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
-    [Parameter(Mandatory = $false, Position = 0)]
-    [string]$Action = 'Install'
-)
-
-
-function Test-Update {
-    $Msu      = Get-ChildItem -Filter "*.msu"
-    $HotFixID = ($Msu.Name | Select-String -Pattern 'kb\d+').Matches.Value.ToUpper()
-
-    return $HotFixID -in (Get-HotFix).HotFixID
-}
-
-
-function Install-Update {
-    $Msu = Get-ChildItem -Filter "*.msu"
-
-    @("SSU*.cab", "Windows*.cab") | Foreach-Object {
-        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
-    }
-
-    Get-ChildItem -Filter "*.cab" | Foreach-Object {
-        Add-WindowsPackage -Online -PackagePath "$($_.FullName)" -NoRestart -ErrorAction SilentlyContinue
-        Remove-Item -Path "$($_.FullName)" -Force
-    }
-}
-
-
-function Uninstall-Update {
-    $Msu = Get-ChildItem -Filter "*.msu"
-
-    @("Windows*.cab") | Foreach-Object {
-        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
-    }
-
-    Get-ChildItem -Filter "*.cab" | Foreach-Object {
-        Remove-WindowsPackage -Online -PackagePath "$($_.FullName)" -NoRestart -ErrorAction SilentlyContinue
-        Remove-Item -Path "$($_.FullName)" -Force -ErrorAction SilentlyContinue
-    }
-}
-
-
-switch ($Action) {
-    'Install'   { if (-not (Test-Update -Msu $Msu)) { Install-Update } }
-    'Uninstall' { if (Test-Update -Msu $Msu) { Uninstall-Update } }
 }
