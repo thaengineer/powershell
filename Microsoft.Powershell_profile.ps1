@@ -369,7 +369,7 @@ function Get-InstalledSoftware {
         [string]$ComputerName = $env:COMPUTERNAME,
 
         [Parameter(Mandatory=$false, Position=1)]
-        [string]$Software = ""
+        [string]$Software = ''
     )
 
     $ScriptBlock = {
@@ -379,8 +379,8 @@ function Get-InstalledSoftware {
         )
 
         $Keys = @(
-            "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
-            "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+            'HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
         )
 
         New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS -ErrorAction SilentlyContinue | Out-Null
@@ -389,26 +389,26 @@ function Get-InstalledSoftware {
             $Keys += "$($_.PSPath)\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
         }
 
-        $Products = Get-ItemProperty -Path $Keys -ErrorAction SilentlyContinue | Where-Object { $null -ne $_.DisplayName -and $_.DisplayName -match "$($Software)" }
+        $Products = Get-ItemProperty -Path $Keys -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -ne $null -and $_.DisplayName -match "$($Software)" }
 
         Remove-PSDrive -Name HKU
 
         return $Products
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            $Result = Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ArgumentList $Software
-            $Result | Select-Object @{ Name = "ComputerName"; Expression = { $_.PSComputerName} }, DisplayName, DisplayVersion, @{ Name = "RegHive"; Expression = { $_.PSPath -replace "^.*HKEY_LOCAL_MACHINE.*$", "HKLM" -replace "^.*HKEY_USERS.*$", "HKU" } }, UninstallString |
-                Sort-Object -Property DisplayName | Format-Table -AutoSize
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        $Result = Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ArgumentList $Software
+        $Result | Select-Object @{ Name = "ComputerName"; Expression = { $_.PSComputerName} }, DisplayName, DisplayVersion, @{ Name = "RegHive"; Expression = { $_.PSPath -replace "^.*HKEY_LOCAL_MACHINE.*$", "HKLM" -replace "^.*HKEY_USERS.*$", "HKU" } }, UninstallString | Sort-Object -Property DisplayName | Format-Table
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
+
 
 function New-IntunePackage {
     $Exe     = "$($env:USERPROFILE)\workspace\bin\IntuneWinAppUtil.exe"
@@ -426,6 +426,7 @@ function New-IntunePackage {
         Write-Host -ForegroundColor Yellow "The `"Package`" directory does not exist."
     }
 }
+
 
 function PsCtrl {
     $ts = (New-TimeSpan -Start (Get-Date).DateTime -End (Get-Date -Hour 16 -Minute 30 -Second 00).DateTime)
