@@ -1,156 +1,138 @@
-########################################
-
 # env
-$env:Path = ($env:Path | ForEach-Object { $_ -split ';' } | Sort-Object -Unique) -join ';'
-$env:Path = "$env:Path;C:\Users\$($env:USERNAME)\workspace\bin"
+$EnvMachine = ([System.Environment]::GetEnvironmentVariable('Path', 'Machine').Split(';') | Sort-Object -Unique | Where-Object { $_ -ne '' }) -join ';'
+$EnvUser    = ([System.Environment]::GetEnvironmentVariable('Path', 'User').Split(';') | Sort-Object -Unique | Where-Object { $_ -ne '' }) -join ';'
 
-# aliases
-Set-Alias -Name "vim" -Value "nvim"
+[System.Environment]::SetEnvironmentVariable('Path', $EnvMachine, 'Machine')
+[System.Environment]::SetEnvironmentVariable('Path', $EnvUser, 'User')
+
+if (Test-Path -Path "$($env:USERPROFILE)\bin") { $env:Path = "$env:Path;$($env:USERPROFILE)\bin" }
+if (Test-Path -Path 'C:\Program Files\Neovim\bin') { $env:Path = "$env:Path;C:\Program Files\Neovim\bin" }
+
 
 # modules
-$Modules = Get-ChildItem -Path "C:\Users\$($env:USERNAME)\Documents\WindowsPowerShell\Modules" -Filter "*.psm1"
-$Modules | ForEach-Object {
-    Import-Module $_.FullName
-}
+$PSModulePath = $env:PSModulePath.Split(';') | Where-Object { $_ -match $env:USERNAME}
+Get-ChildItem -Path $PSModulePath -Filter "*.psm1" | ForEach-Object { Import-Module $_.FullName }
 
-# cwd
-if (Test-Path -Path "$($env:USERPROFILE)\workspace") {
-    Set-Location -Path "$($env:USERPROFILE)\workspace"
-} else {
-    Set-Location -Path "$($env:USERPROFILE)"
-}
 
-########################################
+# working directory
+Set-Location -Path $env:USERPROFILE
 
+
+# aliases
+if (Test-Path -Path 'C:\Program Files\Neovim\bin\nvim.exe') { Set-Alias -Name "vim" -Value "nvim" }
+
+
+# functions
 function Get-CustomFunctions {
-    $Functions = (Get-Content -Path $($PROFILE) | Select-String -Pattern '^function\s.*-.*\s\{' | Sort-Object) -replace "(function\s|\s\{)"
+    $Functions = (Get-Content -Path $PROFILE | Select-String -Pattern '^function\s\w+-\w+' | Sort-Object -Unique) -replace 'function\s', ''
 
-    return $Functions | Where-Object { $_ -ne "Get-CustomFunctions" }
+    return $Functions | Where-Object { $_ -ne 'Get-CustomFunctions' }
 }
+
+
+function cdpro {
+    Set-Location -Path $env:USERPROFILE
+}
+
 
 function Get-Sha256Sum {
-    Param (
+    param (
         [string]$FilePath
     )
 
-    $File = Get-ChildItem -Path $FilePath
-
-    $Sha256Sum = (Get-FileHash -Path $File.FullName -Algorithm SHA256).Hash
-
-    return "$($FilePath.Split("\")[-1])`n$($Sha256Sum)"
-}
-
-function TestMachine {
-    Param (
-        [string]$ComputerName
-    )
-
-    Start-Process -FilePath "mstsc.exe" -ArgumentList "/v $($ComputerName)" -NoNewWindow
-}
-
-function cdpro {
-    Set-Location -Path "$($env:USERPROFILE)\workspace"
-}
-
-function rdp {
-    Param (
-        [string]$ComputerName
-    )
-
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        Start-Process "mstsc.exe" -ArgumentList "/v $($ComputerName)" -NoNewWindow
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    try {
+        $File      = Get-ChildItem -Path $FilePath -ErrorAction Stop
+        $Sha256Sum = (Get-FileHash -Path $File.FullName -Algorithm SHA256).Hash
+    } catch {
+        Write-Host -ForegroundColor Red "Failed to get sha256 hash"
+        break
     }
+
+    return "$($File.Name)`n$($Sha256Sum)"
 }
+
 
 function Clear-CcmCache {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
     $ScriptBlock = {
         Remove-Item "C:\WINDOWS\ccmcache\*" -Recurse -Force
-        Get-WmiObject -Query "SELECT * FROM CacheInfoEx" -Namespace "ROOT\ccm\SoftMgmtAgent" | Remove-WmiObject
+        Get-WmiObject -Query "SELECT * FROM CacheInfoEx" -Namespace "ROOT\ccm\SoftMgmtAgent" | Remove-WmiObject | Out-Null
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -AsJob | Out-Null
-            Wait-Job *
-            Get-Job | Remove-Job
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ErrorAction Stop
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
+
 
 function Get-DiskUsage {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    $Payload = {
-        $Disk  = Get-PSDrive -Name "C";
-        $Free  = [Math]::Round($Disk.Free / 1024 / 1024 / 1024, 1)
-        $Used  = [Math]::Round($Disk.Used / 1024 / 1024 / 1024, 1)
-        $Total = [Math]::Round(($Disk.Free + $Disk.Used) / 1024 / 1024 / 1024, 1)
-        $Capacity = [Math]::Round($Used / $Total * 100)
+    $ScriptBlock = {
+        $Disk                  = Get-PSDrive -Name $($env:SystemDrive.Replace(':', ''))
+        $Free                  = [Math]::Round($Disk.Free / 1024 / 1024 / 1024, 1)
+        $Used                  = [Math]::Round($Disk.Used / 1024 / 1024 / 1024, 1)
+        $Total                 = [Math]::Round(($Disk.Free + $Disk.Used) / 1024 / 1024 / 1024, 1)
+        $Capacity              = [Math]::Round($Used / $Total * 100)
+        $Table                 = [ordered]@{}
+        $Table['ComputerName'] = "$($env:COMPUTERNAME)"
+        $Table['Filesystem']   = "$($env:SystemDrive.Replace(':', ''))"
+        $Table['Size']         = "$($Total)G"
+        $Table['Used']         = "$($Used)G"
+        $Table['Available']    = "$($Free)G"
+        $Table['Capacity']     = "$($Capacity)%"
+        $Properties            = [PSCustomObject]$Table
 
-        $Properties = [Ordered]@{
-            "ComputerName" = "$($env:COMPUTERNAME)"
-            "Filesystem"   = "C"
-            "Size"         = "$($Total)G"
-            "Used"         = "$($Used)G"
-            "Available"    = "$($Free)G"
-            "Capacity"     = "$($Capacity)%"
-        }
-
-        $Object = New-Object -TypeName PSObject
-
-        $Properties.GetEnumerator() | ForEach-Object {
-            $Object | Add-Member -MemberType NoteProperty -Name $_.Key -Value $Properties[$_.Key]
-        }
-
-        $Object | Format-Table
+        return $Properties
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock $Payload
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ErrorAction Stop
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
+
 
 function Get-Uptime {
     param (
-        $ComputerName = $env:COMPUTERNAME
+        [string]$ComputerName = $env:COMPUTERNAME
     )
 
-    $Payload = {
+    $ScriptBlock = {
         $UpTime = (Get-Date) - (Get-CimInstance -ClassName Win32_OperatingSystem -ComputerName $ComputerName).LastBootUpTime
-        Write-Host "$((Get-Date -Format "HH:mm")) up $($UpTime.Days) day(s) $($UpTime.Hours):$($UpTime.Minutes)"
+        Write-Host "$((Get-Date -Format "HH:mm"))  up $($UpTime.Days) day(s) $((Get-Date -Hour $UpTime.Hours).ToString("HH")):$((Get-Date -Minute $UpTime.Minutes).ToString("mm"))"
     }
 
-    if (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet) {
-        try {
-            Test-WSMan -ComputerName $ComputerName -ErrorAction Stop | Out-Null
-            Invoke-Command -ComputerName $ComputerName -ScriptBlock $Payload
-        } catch {
-            Write-Host -ForegroundColor Red "$($ComputerName) : WinRM disabled"
-        }
-    } else {
-        Write-Host -ForegroundColor Red "$($ComputerName) : offline"
+    if (-not (Test-Connection -ComputerName $ComputerName -Count 1 -Quiet)) {
+        Write-Host -ForegroundColor Red "$($ComputerName) is not reachable"
+        break
+    }
+
+    try {
+        Invoke-Command -ComputerName $ComputerName -ScriptBlock $ScriptBlock -ErrorAction Stop
+    } catch {
+        Write-Host -ForegroundColor Red "$($ComputerName) WinRM disabled"
     }
 }
+
 
 function Transfer-File {
     param (
@@ -465,4 +447,56 @@ function PsCtrl {
         Start-Sleep -Seconds 60
         $s.Invoke("^")
     }
+}
+
+
+
+
+
+param (
+    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
+    [Parameter(Mandatory = $false, Position = 0)]
+    [string]$Action = 'Install'
+)
+
+
+function Test-Update {
+    $Msu      = Get-ChildItem -Filter "*.msu"
+    $HotFixID = ($Msu.Name | Select-String -Pattern 'kb\d+').Matches.Value.ToUpper()
+
+    return $HotFixID -in (Get-HotFix).HotFixID
+}
+
+
+function Install-Update {
+    $Msu = Get-ChildItem -Filter "*.msu"
+
+    @("SSU*.cab", "Windows*.cab") | Foreach-Object {
+        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
+    }
+
+    Get-ChildItem -Filter "*.cab" | Foreach-Object {
+        Add-WindowsPackage -Online -PackagePath "$($_.FullName)" -NoRestart -ErrorAction SilentlyContinue
+        Remove-Item -Path "$($_.FullName)" -Force
+    }
+}
+
+
+function Uninstall-Update {
+    $Msu = Get-ChildItem -Filter "*.msu"
+
+    @("Windows*.cab") | Foreach-Object {
+        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
+    }
+
+    Get-ChildItem -Filter "*.cab" | Foreach-Object {
+        Remove-WindowsPackage -Online -PackagePath "$($_.FullName)" -NoRestart -ErrorAction SilentlyContinue
+        Remove-Item -Path "$($_.FullName)" -Force -ErrorAction SilentlyContinue
+    }
+}
+
+
+switch ($Action) {
+    'Install'   { if (-not (Test-Update -Msu $Msu)) { Install-Update } }
+    'Uninstall' { if (Test-Update -Msu $Msu) { Uninstall-Update } }
 }
