@@ -1,0 +1,27 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://shemas.microsoft.com/winfx/2006/xaml"
+        Name="Window"
+        Title="Liquit Collection Member Mgmt"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Height="488" Width="412">
+    <Grid Name="Grid">
+        <Label Name="CollectionsLabel" Content="Collections:" FontWeight="Bold" Margin="16,8,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <ListBox Name="CollsList" Margin="16,32,0,0" Height="96" Width="360" SelectionMode="Single" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <Button Name="SelectCollBtn" Content="Select Collection" FontWeight="Bold" Margin="256,8,0,0" Height="20" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+
+        <Label Name="MembersLabel" Content="Collection Members:" FontWeight="Bold" Margin="16,132,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <ListBox Name="MembersList" Margin="16,154,0,0" Height="96" Width="360" SelectionMode="Extended" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+
+        <Label Name="TextFileLabel" Content="Import List:" FontWeight="Bold" Margin="16,258,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <TextBox Name="TextFile" Text="" TextWrapping="Wrap" Margin="96,258,0,0" Height="20" Width="248" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <Button Name="OpenFile" Content="..." FontWeight="Bold" Margin="350,258,0,0" Height="20" Width="26" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+
+        <ListBox Name="DeviceList" Margin="16,288,0,0" Height="96" Width="360" SelectionMode="Extended" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <Button Name="AddBtn" Content="Add" FontWeight="Bold" Margin="16,392,0,0" Height="20" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+        <Button Name="RemoveBtn" Content="Remove" FontWeight="Bold" Margin="256,392,0,0" Height="20" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top"/>
+
+        <!-- <ListBox Name="Status" Margin="16,416,0,0" Height="24" Width="360" SelectionMode="Extended" HorizontalAlignment="Left" VerticalAlignment="Top"/> -->
+        <ProgressBar Name="ProgressBar" Margin="16,416,0,0" Height="24" Width="360" HorizontalAlignment="Left" VerticalAlignment="Top" Minimum="0" Maximum="100"/>
+    </Grid>
+</Window>
