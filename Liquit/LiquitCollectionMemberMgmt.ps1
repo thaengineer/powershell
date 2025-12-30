@@ -1,3 +1,5 @@
+# Add-Type -AssemblyName PresentationFramework
+# Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName PresentationFramework, WindowsBase, System.Xaml, System.Windows.Forms, System.Drawing
 
 try {
@@ -6,6 +8,11 @@ try {
     Install-Module -Name "Liquit.Server.PowerShell" -Scope CurrentUser -Force
 } finally {
     Import-Module -Name "Liquit.Server.PowerShell"
+}
+
+# create log dir
+if (-not (Test-Path -Path 'C:\Temp')) {
+    New-Item -ItemType Directory -Path 'C:\Temp' | Out-Null
 }
 
 # load Layout.xaml
@@ -34,8 +41,22 @@ try {
     return
 }
 
+$script:SelectedCollectionName = $null
+
 
 # event handler functions
+function Write-Log {
+    param (
+        [string]$Message,
+        [string]$LogFile
+    )
+
+    $TimeStamp = Get-Date -Format "[yyyy-MM-dd HH:mm:ss]"
+
+    Add-Content -Path $LogFile -Value "$($TimeStamp) $($Message)" -Force -ErrorAction SilentlyContinue
+}
+
+
 function Update-Collections {
     # poulate list with collections
     $CollsList.Items.Clear()
@@ -60,6 +81,8 @@ function Select-Collection {
         $Devices | Sort-Object | ForEach-Object {
             $MembersList.Items.Add($_)
         }
+
+        $script:SelectedCollectionName = $CollsList.SelectedItem
     }
 }
 
@@ -84,79 +107,62 @@ function Select-ComputerList {
 
 
 function Add-ToCollection {
-    #$Total             = $DeviceList.Items.Count
-    #$Count             = 0
-    $Collection        = Get-LiquitDeviceCollection -Name $CollsList.SelectedItem
+    if ([string]::IsNullOrWhiteSpace($script:SelectedCollectionName)) {
+        return
+    }
+
+    $Collection        = Get-LiquitDeviceCollection -Name $script:SelectedCollectionName # $CollsList.SelectedItem
     $CollectionMembers = Get-LiquitDeviceCollectionMember -DeviceCollection $Collection
+    $LogFile           = "C:\Temp\$($Collection.Name)-add.log"
     $ProgressBar.Value = 0
 
     for ($i = 1; $i -le $DeviceList.Items.Count; $i++) {
         $Pct    = $i / $DeviceList.Items.Count * 100
-        #Write-Host "[$([Math]::Round($Pct, 0))/100]"
-        $Device = Get-LiquitDevice -Name $_ -ErrorAction SilentlyContinue
+        $Device = Get-LiquitDevice -Name $DeviceList.Items[$i - 1] -ErrorAction SilentlyContinue
 
         if ($null -eq $Device) {
-            # Write-Log -Message "[ERROR] $($_) (does not exist)" -LogFile $LogFile
-        } elseif ($null -ne $Device -and $_ -notin $CollectionMembers.Name) {
+            Write-Log -Message "[ERROR] $($DeviceList.Items[$i - 1]) (does not exist)" -LogFile $LogFile
+        } elseif ($null -ne $Device -and $DeviceList.Items[$i - 1] -notin $CollectionMembers.Name) {
             Add-LiquitDeviceCollectionMember -DeviceCollection $Collection -Device $Device -ErrorAction SilentlyContinue
-            # Write-Log -Message "[INFO] $($_) (added to $($CollectionName))" -LogFile $LogFile
+            Write-Log -Message "[INFO] $($DeviceList.Items[$i - 1]) (added to $($Collection.Name))" -LogFile $LogFile
         } else {
-            # Write-Log -Message "[WARN] $($_) (exists in $($CollectionName)" -LogFile $LogFile
+            Write-Log -Message "[WARN] $($DeviceList.Items[$i - 1]) (exists in $($Collection.Name))" -LogFile $LogFile
         }
-        $ProgressBar.Value = $([Math]::Round($Pct, 0))/100
+        $ProgressBar.Value = $([Math]::Round($Pct, 0))
+        $ProgressBar.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Render, [action]{})
+        Select-Collection
     }
-
-    #$DeviceList.Items | ForEach-Object {
-    #    $Count++
-    #
-    #    $Device = Get-LiquitDevice -Name $_ -ErrorAction SilentlyContinue
-    #
-    #    if ($null -eq $Device) {
-    #        #$Status.Items.Add("[$($Count)/$($Total)] $($_) (does not exist)")
-    #        # Write-Log -Message "[ERROR] $($_) (does not exist)" -LogFile $LogFile
-    #    } elseif ($null -ne $Device -and $_ -notin $CollectionMembers.Name) {
-    #        Add-LiquitDeviceCollectionMember -DeviceCollection $Collection -Device $Device -ErrorAction SilentlyContinue
-    #        #$Status.Items.Add("[$($Count)/$($Total)] $($_) (added)")
-    #        # Write-Log -Message "[INFO] $($_) (added to $($CollectionName))" -LogFile $LogFile
-    #    } else {
-    #        #$Status.Items.Add("[$($Count)/$($Total)] $($_) (skipped)")
-    #        # Write-Log -Message "[WARN] $($_) (exists in $($CollectionName)" -LogFile $LogFile
-    #    }
-    #    #$LastIndex = $Status.Items.Count - 1
-    #    #$Status.ScrollIntoView($Status.Items[$LastIndex])
-    #}
-
-    Select-Collection
+    $ProgressBar.Value = 0
 }
 
 
 function Remove-FromCollection {
-    $Total             = $DeviceList.Items.Count
-    $Count             = 0
-    $Collection        = Get-LiquitDeviceCollection -Name $CollsList.SelectedItem
-    $CollectionMembers = Get-LiquitDeviceCollectionMember -DeviceCollection $Collection
-
-    $DeviceList.Items | ForEach-Object {
-        $Count++
-
-        $Device = Get-LiquitDevice -Name $_ -ErrorAction SilentlyContinue
-
-        if ($null -eq $Device) {
-            #$Status.Items.Add("[$($Count)/$($Total)] $($_) (does not exist)")
-            # Write-Log -Message "[ERROR] $($_) (does not exist)" -LogFile $LogFile
-        } elseif ($null -ne $Device -and $_ -in $CollectionMembers.Name) {
-            Remove-LiquitDeviceCollectionMember -DeviceCollection $Collection -Device $Device -ErrorAction SilentlyContinue
-            #$Status.Items.Add("[$($Count)/$($Total)] $($_) (removed)")
-            # Write-Log -Message "[INFO] $($_) (added to $($CollectionName))" -LogFile $LogFile
-        } else {
-            #$Status.Items.Add("[$($Count)/$($Total)] $($_) (skipped)")
-            # Write-Log -Message "[WARN] $($_) (exists in $($CollectionName)" -LogFile $LogFile
-        }
-        #$LastIndex = $Status.Items.Count - 1
-        #$Status.ScrollIntoView($Status.Items[$LastIndex])
+    if ([string]::IsNullOrWhiteSpace($script:SelectedCollectionName)) {
+        return
     }
 
-    Select-Collection
+    $Collection        = Get-LiquitDeviceCollection -Name $script:SelectedCollectionName # $CollsList.SelectedItem
+    $CollectionMembers = Get-LiquitDeviceCollectionMember -DeviceCollection $Collection
+    $LogFile           = "C:\Temp\$($Collection.Name)-remove.log"
+    $ProgressBar.Value = 0
+
+    for ($i = 1; $i -le $DeviceList.Items.Count; $i++) {
+        $Pct    = $i / $DeviceList.Items.Count * 100
+        $Device = Get-LiquitDevice -Name $DeviceList.Items[$i - 1] -ErrorAction SilentlyContinue
+
+        if ($null -eq $Device) {
+            Write-Log -Message "[ERROR] $($DeviceList.Items[$i - 1]) (does not exist)" -LogFile $LogFile
+        } elseif ($null -ne $Device -and $DeviceList.Items[$i - 1] -in $CollectionMembers.Name) {
+            Remove-LiquitDeviceCollectionMember -DeviceCollection $Collection -Device $Device -ErrorAction SilentlyContinue
+            Write-Log -Message "[INFO] $($DeviceList.Items[$i - 1]) (removed from $($Collection.Name))" -LogFile $LogFile
+        } else {
+            Write-Log -Message "[WARN] $($DeviceList.Items[$i - 1]) (did not exist in $($Collection.Name))" -LogFile $LogFile
+        }
+        $ProgressBar.Value = $([Math]::Round($Pct, 0))
+        $ProgressBar.Dispatcher.Invoke([System.Windows.Threading.DispatcherPriority]::Render, [action]{})
+        Select-Collection
+    }
+    $ProgressBar.Value = 0
 }
 
 
