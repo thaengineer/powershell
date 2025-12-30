@@ -2,7 +2,7 @@ Import-Module -Name PSMSI
 
 $UpgradeCode = (New-Guid).Guid.ToUpper()
 
-New-Installer -ProductName "Liquit Collection Member Mgmt" -UpgradeCode $UpgradeCode -Manufacturer 'Gulfstream' -Content {
+New-Installer -ProductName "Liquit Collection Member Mgmt" -UpgradeCode $UpgradeCode -Manufacturer 'None' -Content {
     New-InstallerDirectory -PredefinedDirectoryName 'ProgramFilesFolder' -Content {
         New-InstallerDirectory -DirectoryName "Liquit Collection Member Mgmt" -Id 'InstallDir' -Content {
             New-InstallerFile -Source '.\Layout.xaml'
