@@ -21,7 +21,6 @@
         <Button Name="AddBtn" Content="Add" FontWeight="Bold" Margin="16,392,0,0" Height="20" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top"/>
         <Button Name="RemoveBtn" Content="Remove" FontWeight="Bold" Margin="256,392,0,0" Height="20" Width="120" HorizontalAlignment="Left" VerticalAlignment="Top"/>
 
-        <!-- <ListBox Name="Status" Margin="16,416,0,0" Height="24" Width="360" SelectionMode="Extended" HorizontalAlignment="Left" VerticalAlignment="Top"/> -->
         <ProgressBar Name="ProgressBar" Margin="16,416,0,0" Height="24" Width="360" HorizontalAlignment="Left" VerticalAlignment="Top" Minimum="0" Maximum="100"/>
     </Grid>
 </Window>
