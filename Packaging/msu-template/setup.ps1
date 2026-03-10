@@ -1,13 +1,13 @@
 param (
-    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
+    [ValidateSet("Install", "Uninstall", IgnoreCase = $true)]
     [Parameter(Mandatory = $false, Position = 0)]
-    [string]$Action = 'Install'
+    [string]$Action = "Install"
 )
 
 
 function Test-Update {
     $Msu      = Get-ChildItem -Filter "*.msu"
-    $HotFixID = ($Msu.Name | Select-String -Pattern 'kb\d+').Matches.Value.ToUpper()
+    $HotFixID = ($Msu.Name | Select-String -Pattern "kb\d+").Matches.Value.ToUpper()
 
     return $HotFixID -in (Get-HotFix).HotFixID
 }
@@ -17,7 +17,7 @@ function Install-Update {
     $Msu = Get-ChildItem -Filter "*.msu"
 
     @("SSU*.cab", "Windows*.cab") | Foreach-Object {
-        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
+        Start-Process -FilePath "expand.exe" -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
     }
 
     Get-ChildItem -Filter "*.cab" | Foreach-Object {
@@ -31,7 +31,7 @@ function Uninstall-Update {
     $Msu = Get-ChildItem -Filter "*.msu"
 
     @("Windows*.cab") | Foreach-Object {
-        Start-Process -FilePath 'expand.exe' -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
+        Start-Process -FilePath "expand.exe" -ArgumentList "`"$($Msu.FullName)`" -F:$($_) `"$($Msu.DirectoryName)\`"" -NoNewWindow -Wait
     }
 
     Get-ChildItem -Filter "*.cab" | Foreach-Object {
@@ -42,6 +42,6 @@ function Uninstall-Update {
 
 
 switch ($Action) {
-    'Install'   { if (-not (Test-Update -Msu $Msu)) { Install-Update } }
-    'Uninstall' { if (Test-Update -Msu $Msu) { Uninstall-Update } }
+    "Install"   { if (-not (Test-Update -Msu $Msu)) { Install-Update } }
+    "Uninstall" { if (Test-Update -Msu $Msu) { Uninstall-Update } }
 }
