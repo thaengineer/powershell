@@ -27,11 +27,11 @@ function Get-MsiProperty {
     $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
 
     $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
-    $value = if ($record) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1) } else { $null }
+    $value  = if ($record) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1) } else { $null }
 
     # clean up com objects to avoid file locks
-    if ($view)   { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($view)   }
-    if ($database) { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($database) }
+    if ($view)      { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($view)   }
+    if ($database)  { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($database) }
     if ($installer) { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($installer) }
     [GC]::Collect()
     [GC]::WaitForPendingFinalizers()
