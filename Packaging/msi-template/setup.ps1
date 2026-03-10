@@ -1,40 +1,73 @@
 param (
-    [ValidateSet('Install', 'Uninstall', IgnoreCase = $true)]
+    [ValidateSet("Install", "Uninstall", IgnoreCase = $true)]
     [Parameter(Mandatory = $false, Position = 0)]
-    [string]$Action = 'Install'
+    [string]$Action = "Install"
 )
 
-if (-not (Test-Path -Path 'C:\Temp')) {
-    New-Item -ItemType Directory -Path 'C:\Temp' -Force | Out-Null
+
+function Get-MsiProperty {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true)]
+        [ValidateScript({Test-Path $_ -PathType Leaf -Include *.msi})]
+        [string]$MsiPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('ProductName', 'ProductVersion', 'ProductCode')]
+        [string]$Property
+    )
+
+    $ErrorActionPreference = 'Stop'
+
+    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $database  = $installer.GetType().InvokeMember('OpenDatabase', 'InvokeMethod', $null, $installer, @($MsiPath, 0))
+    $query     = "SELECT Value FROM Property WHERE Property='$Property'"
+
+    $view = $database.GetType().InvokeMember('OpenView', 'InvokeMethod', $null, $database, @($query))
+    $view.GetType().InvokeMember('Execute', 'InvokeMethod', $null, $view, $null) | Out-Null
+
+    $record = $view.GetType().InvokeMember('Fetch', 'InvokeMethod', $null, $view, $null)
+    $value = if ($record) { $record.GetType().InvokeMember('StringData', 'GetProperty', $null, $record, 1) } else { $null }
+
+    # clean up com objects to avoid file locks
+    if ($view)   { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($view)   }
+    if ($database) { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($database) }
+    if ($installer) { [void][System.Runtime.Interopservices.Marshal]::ReleaseComObject($installer) }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+
+    return $value
 }
 
 
 function Install-Application {
-    $Msi     = Get-ChildItem -Filter '*.msi'
-    $Version = ($Msi.Name | Select-String -Pattern "(\d+\.){1,2}\d+").Matches.Value
-    $LogFile = "C:\Temp\Install-ProductName-$($Version).log"
-    $MsiArgs = "/i `"$($Msi.Name)`" /qn /norestart /l*v `"$($LogFile)`""
+    $Msi            = Get-ChildItem -Filter "*.msi"
+    $ProductName    = Get-MsiProperty -MsiPath $Msi.FullName -Property "ProductName"
+    $ProductVersion = Get-MsiProperty -MsiPath $Msi.FullName -Property "ProductVersion"
+    $LogFile        = "$($env:SystemDrive)\Temp\Install-$($ProductName)-$($ProductVersion).log"
+    $MsiArgs        = "/i `"$($Msi.Name)`" /qn /norestart /l*v `"$($LogFile)`""
 
-    Start-Process -FilePath "msiexec.exe" -ArgumentList "$($ArgList)" -NoNewWindow -Wait
+    Uninstall-Application
+    Start-Process -FilePath "msiexec.exe" -ArgumentList $MsiArgs -NoNewWindow -Wait
 }
 
 
 function Uninstall-Application {
-    $Products = [ordered]@{
-        "ProductName-Version" = "{00000000-0000-0000-0000-000000000000}"
-    }
+    $Msi            = Get-ChildItem -Filter "*.msi"
+    $ProductName    = Get-MsiProperty -MsiPath $Msi.FullName -Property "ProductName"
+    $ProductVersion = Get-MsiProperty -MsiPath $Msi.FullName -Property "ProductVersion"
+    $ProductCode    = Get-MsiProperty -MsiPath $Msi.FullName -Property "ProductCode"
 
-    $Products.GetEnumerator() | Foreach-Object {
-        $Version = ($_.Key | Select-String -Pattern "(\d+\.){1,2}\d+").Matches.Value
-        $LogFile = "C:\Temp\Uninstall-ProductName-$($Version).log"
-        $MsiArgs = "/x $($_.Value) /qn /norestart /l*v $($LogFile)"
+    if ($null -ne $ProductCode) {
+        $LogFile = "$($env:SystemDrive)\Temp\Uninstall-$($ProductName)-$($ProductVersion).log"
+        $MsiArgs = "/x $($ProductCode) /qn /norestart /l*v `"$($LogFile)`""
 
-        Start-Process -FilePath 'msiexec.exe' -ArgumentList $MsiArgs -NoNewWindow -Wait -ErrorAction SilentlyContinue
+        Start-Process -FilePath "msiexec.exe" -ArgumentList $MsiArgs -NoNewWindow -Wait -ErrorAction SilentlyContinue
     }
 }
 
 
-Switch ($Action) {
-    'Install'   { Install-Application }
-    'Uninstall' { Uninstall-Application }
+switch ($Action) {
+    "Install"   { Install-Application }
+    "Uninstall" { Uninstall-Application }
 }
